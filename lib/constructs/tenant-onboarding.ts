@@ -1,3 +1,17 @@
+/**
+ * Tenant Onboarding Construct for SaaS EKS Architecture
+ *
+ * This construct creates and configures the tenant onboarding and deletion processes:
+ * - CodeBuild projects for tenant provisioning and cleanup
+ * - IAM permissions for tenant management operations
+ * - Integration with EKS cluster for tenant-specific resources
+ *
+ * Key components:
+ * - Tenant onboarding CodeBuild project
+ * - Tenant deletion CodeBuild project
+ * - IAM permissions for tenant lifecycle management
+ * - CloudFront and Route53 integration for tenant-specific domains
+ */
 import * as cdk from 'aws-cdk-lib';
 import { Arn, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
@@ -6,36 +20,57 @@ import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { SourceBucket } from './source-bucket';
 
+/**
+ * Properties for configuring the Tenant Onboarding construct
+ */
 export interface TenantOnboardingProps {
+  /** Name for the tenant onboarding CodeBuild project */
   readonly onboardingProjectName: string;
+  /** Name for the tenant deletion CodeBuild project */
   readonly deletionProjectName: string;
+  /** Directory path containing the onboarding assets */
   readonly assetDirectory: string;
 
+  /** Name of the EKS cluster where tenant resources will be deployed */
   readonly eksClusterName: string;
+  /** IAM role with kubectl permissions for EKS operations */
   readonly codebuildKubectlRole: iam.IRole;
+  /** ARN of the OIDC provider for the EKS cluster */
   readonly eksClusterOIDCProviderArn: string;
 
+  /** Names of application service build projects for tenant deployment */
   readonly applicationServiceBuildProjectNames: string[];
 
+  /** CloudFront distribution ID for the application site */
   readonly appSiteDistributionId: string;
+  /** CloudFront domain for the application site */
   readonly appSiteCloudFrontDomain: string;
+  /** Optional custom domain for the application site */
   readonly appSiteCustomDomain?: string;
+  /** Optional hosted zone ID for DNS configuration */
   readonly appSiteHostedZoneId?: string;
 }
 
+/**
+ * Construct that manages tenant onboarding and deletion processes
+ */
 export class TenantOnboarding extends Construct {
+  /** URL of the repository containing tenant resources */
   readonly repositoryUrl: string;
 
   constructor(scope: Construct, id: string, props: TenantOnboardingProps) {
     super(scope, id);
 
+    // Add necessary IAM permissions for tenant management
     this.addTenantOnboardingPermissions(props.codebuildKubectlRole, props);
 
+    // Create source bucket for tenant onboarding assets
     const sourceBucket = new SourceBucket(this, `${id}SourceBucket`, {
       name: 'TenantOnboarding',
       assetDirectory: props.assetDirectory,
     });
 
+    // Define CloudFormation parameters for tenant stack
     const onboardingCfnParams: { [key: string]: string } = {
       TenantId: '$TENANT_ID',
       CompanyName: '"$COMPANY_NAME"',
@@ -47,10 +82,12 @@ export class TenantOnboarding extends Construct {
       OIDCProviderArn: `"${props.eksClusterOIDCProviderArn}"`,
     };
 
+    // Format parameters for CDK command
     const cfnParamString = Object.entries(onboardingCfnParams)
       .map((x) => `--parameters ${x[0]}=${x[1]}`)
       .join(' ');
 
+    // Create tenant onboarding CodeBuild project
     const onboardingProject = new codebuild.Project(this, `TenantOnboardingProject`, {
       projectName: `${props.onboardingProjectName}`,
       source: sourceBucket.source,
@@ -109,6 +146,7 @@ export class TenantOnboarding extends Construct {
       }),
     });
 
+    // Create tenant deletion CodeBuild project
     const tenantDeletionProject = new codebuild.Project(this, 'TenantDeletionProject', {
       projectName: props.deletionProjectName,
       role: props.codebuildKubectlRole,
@@ -150,6 +188,11 @@ export class TenantOnboarding extends Construct {
     });
   }
 
+  /**
+   * Adds necessary IAM permissions for tenant onboarding and deletion operations
+   * @param projectRole The IAM role to which permissions will be added
+   * @param props The tenant onboarding properties
+   */
   private addTenantOnboardingPermissions(projectRole: iam.IRole, props: TenantOnboardingProps) {
     // TODO: reduce the permission
 

@@ -1,3 +1,18 @@
+/**
+ * Static Site Construct for SaaS EKS Architecture
+ *
+ * This construct creates and configures a static website with CloudFront distribution:
+ * - S3 bucket for hosting static content
+ * - CloudFront distribution for content delivery
+ * - Optional custom domain with Route53 configuration
+ * - CI/CD pipeline for automated deployments
+ *
+ * Key components:
+ * - CloudFront distribution with S3 origin
+ * - CodePipeline for automated builds and deployments
+ * - Custom domain and certificate management (optional)
+ * - Environment-specific configuration injection
+ */
 import { RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -13,34 +28,64 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { SourceBucket } from './source-bucket';
 
+/**
+ * Properties for configuring the Static Site
+ */
 export interface StaticSiteProps {
+  /** Name identifier for the static site */
   readonly name: string;
+  /** Source bucket containing the site assets */
   readonly sourceBucket: SourceBucket;
+  /** Project name for the static site (used in build configuration) */
   readonly project: string;
+  /** Directory path containing the site assets */
   readonly assetDirectory: string;
+  /** HTTP methods allowed by the CloudFront distribution */
   readonly allowedMethods: string[];
+  /** Function to generate site-specific configuration based on domain */
   readonly siteConfigurationGenerator: (
     siteDomain: string
   ) => Record<string, string | number | boolean>;
 
+  /** Optional custom domain for the site */
   readonly customDomain?: string;
+  /** Optional certificate domain (defaults to customDomain if not specified) */
   readonly certDomain?: string;
+  /** Optional hosted zone for DNS configuration */
   readonly hostedZone?: route53.IHostedZone;
+  /** Optional Cognito configuration for user authentication */
   readonly cognitoProps?: {
+    /** Email address for the admin user */
     adminUserEmail: string;
+    /** Function to generate email subject for user creation */
     emailSubjectGenerator?: (siteName: string) => string;
+    /** Function to generate email body for user creation */
     emailBodyGenerator?: (siteDomain: string) => string;
   };
 }
 
+/**
+ * Default email subject generator for user creation notifications
+ */
 const defaultEmailSubjectGenerator = (siteName: string) => `${siteName} User Created`;
+
+/**
+ * Default email body generator for user creation notifications
+ */
 const defaultEmailBodyGenerator = (siteDomain: string) =>
   `Your username is {username} and temporary password is {####}. Please login here: https://${siteDomain}`;
 
+/**
+ * Construct that creates a static website with CloudFront distribution and CI/CD pipeline
+ */
 export class StaticSite extends Construct {
+  /** URL of the source code repository */
   readonly repositoryUrl: string;
+  /** Domain name for the static site */
   readonly siteDomain: string;
+  /** CloudFront distribution for content delivery */
   readonly cloudfrontDistribution: cloudfront.Distribution;
+  /** S3 bucket hosting the static site content */
   readonly siteBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: StaticSiteProps) {
@@ -76,6 +121,16 @@ export class StaticSite extends Construct {
     );
   }
 
+  /**
+   * Creates the static site infrastructure including S3 bucket and CloudFront distribution
+   * @param id Construct ID
+   * @param allowedMethods HTTP methods allowed by CloudFront
+   * @param useCustomDomain Whether to use a custom domain
+   * @param customDomain Custom domain name (if applicable)
+   * @param certDomain Certificate domain name (if applicable)
+   * @param hostedZone Hosted zone for DNS configuration (if applicable)
+   * @returns The CloudFront distribution and S3 bucket
+   */
   private createStaticSite(
     id: string,
     allowedMethods: string[],
@@ -154,6 +209,15 @@ export class StaticSite extends Construct {
     return { distribution, appBucket };
   }
 
+  /**
+   * Creates the CI/CD pipeline for building and deploying the static site
+   * @param id Construct ID
+   * @param project Project name for the build configuration
+   * @param cloudfrontDistributionId CloudFront distribution ID for cache invalidation
+   * @param siteConfig Site-specific configuration to inject during build
+   * @param distroBucket S3 bucket for the CloudFront distribution
+   * @param sourceBucket Source bucket containing the site assets
+   */
   private createCICDForStaticSite(
     id: string,
     project: string,
